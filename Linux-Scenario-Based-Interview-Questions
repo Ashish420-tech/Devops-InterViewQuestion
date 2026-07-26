@@ -1,0 +1,484 @@
+# Linux Scenario-Based Interview Questions
+
+> This document contains practical Linux administration and DevOps
+> interview scenarios. The original content has been preserved while
+> improving formatting, readability, and GitHub Markdown compatibility.
+
+------------------------------------------------------------------------
+
+## Table of Contents
+
+1.  Password Aging
+2.  `/etc/shadow` Troubleshooting
+3.  `/etc/passwd` vs `/etc/shadow`
+4.  Open Files by Process
+5.  Filesystem Unmount Troubleshooting
+6.  Slow Boot Troubleshooting
+7.  Permission Denied Troubleshooting
+8.  Kernel Routing Information
+9.  Sticky Bit, SetUID & SetGID
+
+------------------------------------------------------------------------
+
+# Day1-:Linux Scenario based command
+
+# Usefull Scenario based question of Linux
+
+Check password aging sudo chage -l username Make password never expire
+sudo chage -M -1 username Set account to never expire sudo chage -E -1
+username Force password change at next login sudo chage -d 0 username
+Set password to expire after 90 days sudo chage -M 90 username Set
+minimum days before password can be changed sudo chage -m 7 username
+
+A Linux user reports: chage: the shadow password file is not present.
+What do you do?
+
+Answer:
+
+Verify /etc/shadow exists:
+
+ls -l /etc/shadow
+
+Check for the backup:
+
+ls -l /etc/shadow-
+
+If the backup is valid:
+
+sudo cp /etc/shadow- /etc/shadow sudo chown root:shadow /etc/shadow sudo
+chmod 640 /etc/shadow
+
+Verify:
+
+sudo chage -l username One note
+
+Your output still shows:
+
+Last password change : Nov 15, 2025
+
+even though today is July 2026. This is because you restored an older
+backup (/etc/shadow-), so the last-change timestamp came from that
+backup. This is generally harmless, but if you want the "Last password
+change" date to reflect today, simply change the password once:
+
+passwd
+
+or update the last-change date without changing the password:
+
+sudo chage -d \$(date +%F) ashish
+
+Then verify:
+
+sudo chage -l ashish
+
+# This was a solid Linux troubleshooting exercise---you diagnosed the missing file, identified the backup, restored it with the correct ownership and permissions, and verified the fix. Those are exactly the kinds of practical administration skills that are useful in production and during DevOps interviews.
+
+Why are /etc/passwd and /etc/shadow separate?
+
+Answer:
+
+# /etc/passwd contains public user account information such as usernames, UIDs, GIDs, home directories, and login shells. It must be readable by all users because many system utilities rely on it. Password hashes and password-aging information are stored separately in /etc/shadow, which is readable only by root (or authorized processes). This separation protects password hashes from unauthorized access and follows the principle of least privilege.
+
+How do you check which files a process has opened?
+
+Answer:
+
+Find the process ID:
+
+ps -ef \| grep `<process_name>`{=html}
+
+List its open files:
+
+lsof -p `<PID>`{=html}
+
+Alternatively, inspect its file descriptors:
+
+ls -l /proc/`<PID>`{=html}/fd Example
+
+Suppose the PID is 2451:
+
+lsof -p 2451
+
+or
+
+ls -l /proc/2451/fd
+
+These are the standard commands Linux administrators and DevOps
+engineers use to inspect the files a process currently has open.
+
+================================================================= You
+tried to unmount a filesystem, but it failed. What could be the reasons,
+and how would you troubleshoot?"
+
+if a filesystem cannot be unmounted, the most common reason is that it's
+still in use. I first check for open files or processes with lsof +D
+`<mountpoint>`{=html} or fuser -vm `<mountpoint>`{=html}. I also verify
+that no shell has its current working directory inside the mount using
+pwd, and check for applications like databases, Docker containers, or
+web servers using the filesystem. If it's an NFS mount, I consider stale
+network connections. After safely stopping or terminating the processes,
+I retry umount. If necessary, I may use umount -l for a lazy unmount or
+umount -f for certain network filesystems, understanding the risks
+before doing so.
+
+Quick Cheat Sheet Command Purpose lsof +D /mnt/data List processes using
+the mount fuser -vm /mnt/data Show PIDs accessing the filesystem pwd
+Check if your shell is inside the mount w / who Check other logged-in
+users swapon --show Check if swap is using the filesystem losetup -a
+Check for loop devices umount -l /mnt/data Lazy unmount umount -f
+/mnt/data Force unmount (mainly network filesystems)
+
+These are the commands and reasoning an interviewer typically expects
+from an experienced Linux or DevOps engineer.
+
+===================================================================
+
+A Linux server is taking much longer than usual to boot. How would you
+troubleshoot it?
+
+If a Linux server takes longer than expected to boot, I first determine
+whether the delay is in the kernel or userspace using systemd-analyze.
+Then I identify slow services with systemd-analyze blame and inspect the
+dependency chain using systemd-analyze critical-chain. I check for
+failed services with systemctl --failed and review boot logs using
+journalctl -b. I also investigate filesystem checks, disk health, full
+filesystems, network or DNS timeouts, NFS mounts, and resource
+bottlenecks such as CPU, memory, or I/O. Once I identify the root cause,
+I fix the configuration or failing component and confirm the improvement
+by measuring boot time again.
+
+Commands Every DevOps Engineer Should Know Command Purpose
+systemd-analyze Overall boot time systemd-analyze blame Slowest startup
+services systemd-analyze critical-chain Service dependency chain
+systemctl --failed Failed services journalctl -b Boot logs journalctl
+-xe Detailed system logs df -h Disk usage free -h Memory usage dmesg
+Kernel messages smartctl -a /dev/sda Disk health (SMART) cat /etc/fstab
+Verify mount configuration
+
+=======================================================
+
+A user is trying to create a file under a partition, but gets Permission
+denied. What could be the reasons, and how would you troubleshoot?"
+
+f I get a "Permission denied" error while creating a file, I first
+verify the directory permissions with ls -ld and confirm the current
+user using whoami and id. Next, I check ownership and whether the
+filesystem is mounted read-only using mount. I also verify available
+disk space with df -h and inode usage with df -i. If permissions appear
+correct, I inspect ACLs using getfacl, and on RHEL systems I check
+SELinux or on Ubuntu I check AppArmor. Finally, I review kernel logs for
+filesystem errors. Once I identify the root cause, I apply the
+appropriate fix---such as changing ownership, adjusting permissions,
+remounting the filesystem read-write, freeing disk space, or correcting
+security policies.
+
+Quick Troubleshooting Commands Command What it checks ls -ld /path
+Directory permissions and ownership whoami Current user id User ID and
+group memberships mount \| grep /path Read-only (ro) vs read-write (rw)
+mount df -h Disk space df -i Inode usage getfacl /path Access Control
+Lists lsattr /path Immutable attribute namei -l /path Permissions on
+each directory in the path getenforce / aa-status SELinux or AppArmor
+status dmesg or journalctl -k Filesystem or kernel errors Senior-Level
+Tip
+
+In an interview, avoid saying "I'll just run chmod 777." That's
+considered poor practice and a security risk.
+
+===================================================================
+
+How do you check the kernel routing information in Linux?
+
+1.  Using ip route (Recommended)
+
+This is the modern command.
+
+ip route
+
+Example:
+
+default via 192.168.1.1 dev eth0 proto dhcp src 192.168.1.100
+192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.100
+
+Meaning:
+
+default via 192.168.1.1 → Default gateway. dev eth0 → Interface used.
+192.168.1.0/24 → Directly connected network. 2. Show Detailed Routing
+Table ip route show
+
+or
+
+ip route list 3. View the Kernel Routing Table (Legacy) route -n
+
+Example:
+
+Kernel IP routing table
+
+Destination Gateway Genmask Flags Metric Ref Use Iface 0.0.0.0
+192.168.1.1 0.0.0.0 UG 100 0 0 eth0 192.168.1.0 0.0.0.0 255.255.255.0 U
+0 0 0 eth0
+
+-n displays numeric IP addresses instead of resolving hostnames.
+
+Note: route is deprecated. Prefer ip route.
+
+4.  Read the Kernel Routing Table Directly
+
+Linux exposes the routing table through /proc.
+
+cat /proc/net/route
+
+Example:
+
+Iface Destination Gateway Flags RefCnt Use Metric Mask eth0 00000000
+C0A80101 0003 0 0 100 00000000
+
+This is the raw routing information used by the kernel.
+
+5.  Check IPv6 Routes ip -6 route
+6.  Find the Route to a Specific Destination
+
+Example:
+
+ip route get 8.8.8.8
+
+Output:
+
+8.8.8.8 via 192.168.1.1 dev eth0 src 192.168.1.100
+
+This tells you exactly which route and interface the kernel will use.
+
+7.  Display All Network Interfaces ip addr
+
+or
+
+ip link
+
+This helps correlate interfaces with routing entries.
+
+Production Troubleshooting Example
+
+Suppose a server cannot reach the Internet.
+
+Step 1
+
+Check the routing table:
+
+ip route
+
+Output:
+
+192.168.1.0/24 dev eth0 proto kernel scope link
+
+Notice there's no default route.
+
+Step 2
+
+Add the default gateway:
+
+sudo ip route add default via 192.168.1.1 Step 3
+
+Verify:
+
+ip route Step 4
+
+Test connectivity:
+
+ping 8.8.8.8 Interview Answer
+
+The Linux kernel stores routing information in its routing table. I
+usually check it using ip route, which is the modern replacement for
+route -n. If I want to see the exact route the kernel will use for a
+destination, I use ip route get `<destination>`{=html}. I can also
+inspect the raw kernel routing table via /proc/net/route.
+
+Quick Command Cheat Sheet Command Purpose ip route Display IPv4 routing
+table ip route show Show routing table ip route get `<IP>`{=html} Show
+the route used for a destination ip -6 route Display IPv6 routing table
+route -n Legacy routing table command cat /proc/net/route Raw kernel
+routing table ip addr Show IP addresses and interfaces
+=======================================================================
+What is the Sticky Bit?
+
+The Sticky Bit is a special permission used primarily on directories.
+
+It ensures that:
+
+Only the file owner, the directory owner, or root can delete or rename
+files inside the directory.
+
+Example
+
+The /tmp directory:
+
+ls -ld /tmp
+
+Output:
+
+drwxrwxrwt 10 root root 4096 Jul 26 10:00 /tmp
+
+Notice the last character:
+
+t
+
+This indicates the sticky bit is set.
+
+Without it, any user with write permission on /tmp could delete another
+user's files.
+
+2.  How to Set the Sticky Bit Using symbolic mode chmod +t
+    directory_name
+
+Example:
+
+sudo chmod +t /shared Using numeric mode chmod 1777 directory_name
+
+Example:
+
+sudo chmod 1777 /shared
+
+Here:
+
+1 → Sticky Bit 777 → rwxrwxrwx
+
+Result:
+
+drwxrwxrwt 3. Verify Sticky Bit ls -ld /shared
+
+Example:
+
+drwxrwxrwt 2 root root 4096 Jul 26 10:30 /shared 4. Demonstration
+
+Suppose:
+
+/shared
+
+contains:
+
+alice.txt (owned by Alice) bob.txt (owned by Bob)
+
+Without Sticky Bit:
+
+Bob can delete Alice's file if the directory is writable.
+
+With Sticky Bit:
+
+Bob gets:
+
+rm: cannot remove 'alice.txt': Operation not permitted 5. Difference
+Between s and S
+
+This refers to SetUID or SetGID.
+
+Lowercase s
+
+Means:
+
+SetUID/SetGID is enabled. The execute (x) permission is also present.
+
+Example:
+
+-rwsr-xr-x
+
+Owner permissions:
+
+rws
+
+Equivalent to:
+
+rwx + setuid Uppercase S
+
+Means:
+
+SetUID/SetGID is enabled. The execute permission is missing.
+
+Example:
+
+-rwSr--r--
+
+Owner permissions:
+
+rwS
+
+This is usually a configuration mistake because SetUID/SetGID has no
+practical effect without execute permission.
+
+6.  Difference Between t and T
+
+These apply to the Sticky Bit.
+
+Lowercase t
+
+Sticky Bit is set and execute permission exists.
+
+Example:
+
+drwxrwxrwt
+
+This is the normal and useful configuration.
+
+Uppercase T
+
+Sticky Bit is set, but execute permission for others is missing.
+
+Example:
+
+drwxrwxrwT
+
+Without execute permission, users cannot traverse the directory, so the
+sticky bit is generally not useful.
+
+7.  How to Set SetUID chmod u+s filename
+
+Example:
+
+sudo chmod u+s /usr/bin/passwd
+
+Check:
+
+ls -l /usr/bin/passwd
+
+Output:
+
+-rwsr-xr-x 8. How to Set SetGID chmod g+s directory
+
+Example:
+
+sudo chmod g+s project
+
+New files created inside inherit the directory's group.
+
+9.  Summary Table Permission Lowercase Uppercase Meaning SetUID s S s:
+    execute present; S: execute missing SetGID s S s: execute present;
+    S: execute missing Sticky Bit t T t: execute present; T: execute
+    missing Interview Questions & Answers Q1. How do you set the Sticky
+    Bit? chmod +t directory
+
+or
+
+chmod 1777 directory Q2. What is the purpose of the Sticky Bit?
+
+It prevents users from deleting or renaming files owned by other users
+in a shared directory. Only the file owner, directory owner, or root can
+perform those actions.
+
+Q3. What is the difference between s and S? s → SetUID/SetGID is enabled
+and execute permission exists. S → SetUID/SetGID is enabled but execute
+permission is missing. Q4. What is the difference between t and T? t →
+Sticky Bit is enabled and execute permission exists. T → Sticky Bit is
+enabled but execute permission is missing. Numeric Values of Special
+Permissions Special Permission Numeric Value SetUID 4 SetGID 2 Sticky
+Bit 1
+
+Examples:
+
+chmod 4755 file \# SetUID chmod 2755 dir \# SetGID chmod 1777 dir \#
+Sticky Bit chmod 7755 file \# SetUID + SetGID + Sticky Bit DevOps Tip
+
+A very common production example is:
+
+ls -ld /tmp
+
+Expected output:
+
+drwxrwxrwt
+==================================================================
